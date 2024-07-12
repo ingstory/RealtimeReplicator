@@ -1,0 +1,35 @@
+# escape=`
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Python 설치
+RUN Invoke-WebRequest -Uri https://www.python.org/ftp/python/3.9.7/python-3.9.7-amd64.exe -OutFile python-3.9.7-amd64.exe ; `
+    Start-Process python-3.9.7-amd64.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1' -Wait ; `
+    Remove-Item python-3.9.7-amd64.exe -Force
+
+# 환경 변수 설정
+RUN $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# pip 업그레이드
+RUN python -m pip install --upgrade pip
+
+# 작업 디렉토리 설정
+WORKDIR C:\app
+
+# requirements.txt 복사 및 의존성 설치
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# pyinstaller 설치
+RUN pip install pyinstaller
+
+# 소스 코드 복사
+COPY . .
+
+# 볼륨 설정
+VOLUME C:\app\dist
+
+# 실행 파일 빌드
+CMD ["pyinstaller", "--onefile", "--distpath", "C:\app\dist", "--name", "RealtimeReplicator_win.exe", "main.py"]
