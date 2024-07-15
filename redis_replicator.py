@@ -28,20 +28,33 @@ class RedisReplicator(DatabaseReplicator):
         return redis.Redis(host=self.target_host, port=self.target_port, decode_responses=False)
 
     def replicate(self):
-        print(f"Redis 복제 시작: {self.source_host}:{self.source_port} -> {self.target_host}:{self.target_port}")
+        global realtime_thread
+        print(
+            f"복제 시작: {self.source_host}:{self.source_port} -> "
+            f"{self.target_host}:{self.target_port}")
         print(f"동기화할 데이터베이스: 0부터 {self.num_dbs - 1}까지")
 
         if self.clear_target:
+            print(f"데이터베이스 초기화: 타겟 Redis 서버의 모든 데이터를 삭제합니다.")
             self.clear_target_data()
 
         try:
-            self.total_items = self.count_total_keys()
+            self.total_keys = self.count_total_keys()
+
+            # 실시간 동기화 스레드 시작
             if self.realtime:
                 self.start_realtime_sync()
+                realtime_thread = threading.Thread(target=self.process_realtime_events)
+                realtime_thread.start()
 
-            self.sync_all_dbs()
+            # 초기 동기화 스레드 시작
+            sync_thread = threading.Thread(target=self.sync_all_dbs)
+            sync_thread.start()
 
+            # 초기 동기화 완료 대기
+            sync_thread.join()
             print("\n초기 동기화 완료.")
+
             if self.realtime:
                 print("실시간 동기화 모드로 전환. 프로세스를 유지합니다. 종료하려면 Ctrl+C를 누르세요.")
                 while self.running:
@@ -52,6 +65,8 @@ class RedisReplicator(DatabaseReplicator):
             print(f"오류 발생: {e}")
         finally:
             self.stop()
+            if self.realtime:
+                realtime_thread.join()  # 실시간 동기화 스레드 종료 대기
 
     def clear_target_data(self):
         print("대상 Redis 서버의 모든 데이터를 삭제합니다...")
